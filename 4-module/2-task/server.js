@@ -14,13 +14,20 @@ const response = (res, status = 200, body) => {
   res.end(body);
 };
 
+const unlinkError = (err) => {
+  if (err && err.code !== 'ENOENT') throw err;
+};
+
 const errorWriteFile = (res, file, err) => {
   if (err) {
-    fs.unlinkSync(file.path);
-
     switch (err.code) {
       case 'LIMIT_EXCEEDED':
+        fs.unlink(file.path, unlinkError);
         response(res, 413, 'LIMIT_EXCEEDED');
+        break;
+
+      case 'ERR_STREAM_PREMATURE_CLOSE':
+        fs.unlink(file.path, unlinkError);
         break;
 
       default:
@@ -44,15 +51,7 @@ server.on('request', (req, res) => {
         const limitSizeStream = new LimitSizeStream({limit: 1000000});
         const newFile = fs.createWriteStream(filepath);
 
-        stream.finished(req, (err) => {
-          if (err) {
-            if (err.code === 'ERR_STREAM_PREMATURE_CLOSE') {
-              fs.unlinkSync(newFile.path);
-            }
-          } else {
-            response(res, 201, 'file saved!');
-          }
-        });
+        stream.finished(req, errorWriteFile.bind(this, res, newFile));
 
         req
             .on('error', errorWriteFile.bind(this, res, newFile))
